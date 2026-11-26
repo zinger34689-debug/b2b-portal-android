@@ -3,11 +3,6 @@ name: Build B2B Portal APK
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, master ]
-    paths:
-      - 'b2b-portal-android-main.zip'
-      - '.github/workflows/build-apk.yml'
 
 permissions:
   contents: read
@@ -16,14 +11,30 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unpack Android project archive
+      - name: Find and unpack Android project
+        shell: bash
         run: |
-          test -f b2b-portal-android-main.zip
-          unzip -q b2b-portal-android-main.zip -d android-project
-          test -f android-project/B2B_Portal_Android/settings.gradle
+          ZIP=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "ZIP archive not found"
+            ls -la
+            exit 1
+          fi
+          echo "Using archive: $ZIP"
+          mkdir android-project
+          unzip -q "$ZIP" -d android-project
+          SETTINGS=$(find android-project -name settings.gradle -type f | head -n 1)
+          if [ -z "$SETTINGS" ]; then
+            echo "settings.gradle not found"
+            find android-project -maxdepth 4 -type f
+            exit 1
+          fi
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Android project: $PROJECT_DIR"
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -39,14 +50,12 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
-        working-directory: android-project/B2B_Portal_Android
-        run: gradle --no-daemon assembleDebug
+      - name: Build APK
+        run: gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: B2B-Portal-APK
-          path: android-project/B2B_Portal_Android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
