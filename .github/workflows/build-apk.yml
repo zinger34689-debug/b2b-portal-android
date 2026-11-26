@@ -10,31 +10,69 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find and unpack Android project
+      - name: Prepare Android project
         shell: bash
         run: |
-          ZIP=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
-          if [ -z "$ZIP" ]; then
-            echo "ZIP archive not found"
-            ls -la
-            exit 1
+          mkdir -p app/src/main/java/ru/lemanapro/b2bportal
+          mkdir -p app/src/main/res/mipmap-mdpi
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = 'B2BPortal'
+          include ':app'
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'ru.lemanapro.b2bportal'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'ru.lemanapro.b2bportal'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0.0'
+              }
+          }
+          EOF
+
+          cp AndroidManifest.xml app/src/main/AndroidManifest.xml
+          cp MainActivity.java app/src/main/java/ru/lemanapro/b2bportal/MainActivity.java
+
+          if [ -f ic_launcher.png ]; then
+            cp ic_launcher.png app/src/main/res/mipmap-mdpi/ic_launcher.png
           fi
-          echo "Using archive: $ZIP"
-          mkdir android-project
-          unzip -q "$ZIP" -d android-project
-          SETTINGS=$(find android-project -name settings.gradle -type f | head -n 1)
-          if [ -z "$SETTINGS" ]; then
-            echo "settings.gradle not found"
-            find android-project -maxdepth 4 -type f
-            exit 1
-          fi
-          PROJECT_DIR=$(dirname "$SETTINGS")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Android project: $PROJECT_DIR"
+
+          echo "Android project structure created"
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -51,11 +89,11 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build APK
-        run: gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
+        run: gradle --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: B2B-Portal-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
